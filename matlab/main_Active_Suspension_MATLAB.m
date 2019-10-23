@@ -96,7 +96,7 @@ end
 %% Lucas' serial function
 function port = startMacSerial()
 
-port = serial('/dev/cu.usbmodem141401'); % to find ports, either check in 
+port = serial('/dev/cu.usbmodem143401'); % to find ports, either check in 
 %Arduino IDE and pick the same as the arduino, or go to terminal and type
 %  -> ls /dev/cu.*  <-  then pick same one as arduino
 fclose(port);
