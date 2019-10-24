@@ -1,17 +1,17 @@
-int x = 2;
-
+int y = 1;
 
 void setup() {
   Serial.begin(115200);
   while (!Serial) {}
-  Serial.println(x);
+  Serial.println("Start Serial Communication");
 }
 
 void loop() {
-  if (Serial.available() > 0) {
-    int y = Serial.read();
-    y *= 2;
-    Serial.println(y);
+  for (int index = 0; index<25; index++) {
+  Serial.println(y);
+  y++;
   }
-    
+  int x = Serial.read();
+  x++;
+  Serial.println(x);
 }

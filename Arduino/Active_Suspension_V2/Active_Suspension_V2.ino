@@ -135,8 +135,7 @@ ISR(TIMER1_COMPA_vect) {  //change the 1 to 0 for timer0 or 2 for timer2
 void setup() {
   
   //if using serial plotter/monitor ensure that baud rate is the same as this one
-  Serial.begin(9600);
-  
+  Serial.begin(115200);
   //wait while there is no serial connection
   while (!Serial) {}
 
