@@ -1,4 +1,5 @@
 int y = 1;
+int x = 1; 
 
 void setup() {
   Serial.begin(115200);
@@ -11,7 +12,8 @@ void loop() {
   Serial.println(y);
   y++;
   }
-  int x = Serial.read();
+  while (!Serial.available()) {}
+  x = Serial.read();
   x++;
   Serial.println(x);
 }

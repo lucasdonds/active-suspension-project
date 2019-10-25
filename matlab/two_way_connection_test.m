@@ -1,15 +1,12 @@
 %% Main Code Section
 clear all; close all; clc;
 s = startMacSerial('/dev/cu.usbmodem141401');
-% s=serial('/dev/cu.usbmodem141401','BaudRate',115200);
-% set(s, 'Terminator', 'LF');
-% fopen(s);
 
-x=fscanf(s);  %Read 
+x=fscanf(s);  %Read from arduino
 x=strip(x);   %Remove new line from string (remove terminator)
 x
 
-if x=="Start Serial Communication"
+if x=="Start Serial Communication"              %read array of numbers from arduino
     numRows=5;
     numCols=5;
     
@@ -22,17 +19,17 @@ if x=="Start Serial Communication"
     end
     testArray
 end
-fwrite(s,testArray(1,5));
-y=fscanf(s);
-y
+fwrite(s,testArray(1,5));     %write number (5) from array to arduino, will wait for arduino to reviece
+y=fscanf(s);                  %recieve from arduino again
+y = strtrim(y)                %remove trailing whitespace from terminator
+
+if y=='6'                     %outputs yes if it all worked
+   output = 'yes'
+else
+    output = 'no'
+end
  
-% x=0;
-% x=fscanf(s);
-% fwrite(s,y);
-% y=fscanf(s);
-% x
-% y
-closePort('/dev/cu.usbmodem143401');
+closePort('/dev/cu.usbmodem141401');      %close port at end
 
 %% Run this section only if there is a problem with port
-closePort('/dev/cu.usbmodem143401');
+closePort('/dev/cu.usbmodem141401');
