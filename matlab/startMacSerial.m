@@ -8,14 +8,12 @@ fclose(port);
     try 
         set(port, 'BaudRate', 115200);
         set(port, 'OutputBufferSize', 7);
-        set(port, 'Terminator', 'LF');
         fopen(port);
-        instrfind
     catch
         mbox = msgbox('open failed!'); uiwait(mbox);
-        instrfind;
+        instrfind
         fclose(ans);
-        instrfind;
+        instrfind
         fopen(port);
         instrfind
     end
