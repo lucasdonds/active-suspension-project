@@ -1,8 +1,6 @@
 %% Main Code Section
 clear all; close all; clc;
-s=serial('/dev/cu.usbmodem143401','BaudRate',115200);
-set(s, 'Terminator', 'LF');
-fopen(s);
+startMacSerial('/dev/cu.usbmodem141401');
 
 x=fscanf(s);  %Read 
 x=strip(x);   %Remove new line from string (remove terminator)
@@ -31,7 +29,7 @@ y
 % y=fscanf(s);
 % x
 % y
-closePort('/dev/cu.usbmodem143401');
+closePort('/dev/cu.usbmodem141401');
 
 %% Run this section only if there is a problem with port
-closePort('/dev/cu.usbmodem143401');
+closePort('/dev/cu.usbmodem141401');
