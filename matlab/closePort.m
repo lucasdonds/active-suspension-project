@@ -1,8 +1,5 @@
 %% Close port function
-function port = closePort(portName)
-    %'/dev/cu.usbmodem143401'
-    
-    port = serial(portName);
+function port = closePort()
     instrfind;
     fclose(ans);
     instrfind

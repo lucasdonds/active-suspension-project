@@ -38,7 +38,7 @@ int accelTopAD0 = 13;
 
 //initialize array that stores previous speed values so average can be calculated 
 //using fuction: average()
-double speedStorage[20] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+double speedStorage[20] = { 0 };
 double averageSpeed = 0;
 double lastCarPos = 0;
 double lastWheelPos = 0;
@@ -57,6 +57,9 @@ int status;
 
 //counts number of times looped, used in average() function
 int loopCounter = 0;
+
+//bool to control speed of road motor, initialized to false
+bool speed1Active = false;
 
 //-------------------------------
 
@@ -88,7 +91,7 @@ double findSpeed(long counts, double cpr, double duration)
 double average(double stored[], int arraySize, int numLoops)        
 {
   double total = 0;
-  if (numLoops < 20)
+  if (numLoops < arraySize)
   {
     for (int index = 0; index < numLoops; index++)
       total += stored[index];
@@ -118,14 +121,71 @@ double toggleSusMotorDir(int PWM)
   analogWrite(susPWM, PWM);
 }
 
+int toggleRoadMotorSpeed(int speed1, int speed2) 
+{
+  if (!speed1Active) {
+    analogWrite(roadPWM, speed1);
+    speed1Active = true;
+  }
+  else {
+    analogWrite(roadPWM, speed2);
+    speed1Active = false;
+  }
+}
+
+bool resetRoadMotor()
+{
+  
+}
+
+void setupTimer1(double desiredHz1) 
+{
+  //set up interrupt for changing the sus motor direction
+  //user should change desiredHz to what they desire
+  double CMR1 = (16*pow(10,6)) / (desiredHz1*1024) - 1;
+  TCCR1A = 0;     //set entire TCCR1A register to 0
+  TCCR1B = 0;     //same for TCCR1B
+  TCNT1  = 0;     //initialize counter value to 0
+  //set compare match register for desiredHz increments
+  OCR1A = CMR1;    //must be <65536
+  //turn on CTC mode
+  TCCR1B |= (1 << WGM12);
+  //Set CS10 and CS12 bits for 1024 prescaler
+  TCCR1B |= (1 << CS12) | (1 << CS10);
+  //enable timer compare interrupt
+  TIMSK1 |= (1 << OCIE1A);
+}
+
+void setupTimer3(double desiredHz3)
+{
+  //set up interrupt for changing the road motor speed
+  //user should change desiredHz to what they desire
+  double CMR3 = (16*pow(10,6)) / (desiredHz3*1024) - 1;
+  TCCR3A = 0;     // set entire TCCR0A register to 0
+  TCCR3B = 0;     // same for TCCR0B
+  TCNT3  = 0;     //initialize counter value to 0
+  //set compare match register for desiredHz increments
+  OCR3A = CMR3;
+  // turn on CTC mode
+  TCCR3B |= (1 << WGM32);
+  // Set CS bits for 2014 prescaler
+  TCCR3B |= (1 << CS32) | (1 << CS30);   
+  // enable timer compare interrupt
+  TIMSK3 |= (1 << OCIE3A);
+}
+
 //-------------------------------
 
 //INTERRUPTS!!!!!!!!!!!!!!
+//interrupts get set up in setup()
+//disable interrupts by commenting out whats inside the interrupt, but keep the interrupt
 
+//interrupt for toggling speed of road motor
+ISR(TIMER3_COMPA_vect) {  //change the 1 to 0 for timer0 or 2 for timer2
+   toggleRoadMotorSpeed(100, 100);
+}
 
 //interrupt calling function to toggle motor direction of sus motor
-//interrupt gets set up in setup()
-
 ISR(TIMER1_COMPA_vect) {  //change the 1 to 0 for timer0 or 2 for timer2
    toggleSusMotorDir(100);
 }
@@ -136,10 +196,18 @@ void setup() {
   
   //if using serial plotter/monitor ensure that baud rate is the same as this one
   Serial.begin(115200);
-  //wait while there is no serial connection
-  while (!Serial) {}
 
-  //Send HIGH to ADO port to change MPU9250 adress to 0x69
+  /*
+  //handshake with matlab to start connection
+  Serial.println('a');
+  char a = 'b';
+  while (a != 'a')
+  {
+    a = Serial.read();
+  }
+  */
+
+  //Send HIGH to ADO port on top accelerometer to change MPU9250 adress to 0x69
   digitalWrite(accelTopAD0, HIGH);
 
   //start communication with accelerometer
@@ -183,26 +251,23 @@ void setup() {
   //set direction for road motor and initial direction for suspension motor
   digitalWrite(roadDirA, HIGH);
   digitalWrite(susDirA, HIGH);
-
-  //PWM value corresponds to freq of bottom (road) plate and how fast motor will spin
-  analogWrite(roadPWM, 225);
   
-  //set up interrupt for changing the sus motor direction
-  //user should change desiredHz to what they desire
-  double desiredHz = 1;
-  double CMR = (16*pow(10,6)) / (desiredHz*1024) - 1;
+/*
+  int prevEncCount = 0;
+  int curEncCount = 0;
+  bool zeroed = false;
+  while (!zeroed) {
+    curEncCount = carEnc.read();
+    while (curEncCount > prevEncCount)
+    {}
+    while (
+  }
+*/
+
+  //initialize all timer interrupts
   cli();          //stops inturrupts
-  TCCR1A = 0;     //set entire TCCR1A register to 0
-  TCCR1B = 0;     //same for TCCR1B
-  TCNT1  = 0;     //initialize counter value to 0
-  //set compare match register for desiredHz increments
-  OCR1A = CMR;    //must be <65536
-  //turn on CTC mode
-  TCCR1B |= (1 << WGM12);
-  //Set CS10 and CS12 bits for 1024 prescaler
-  TCCR1B |= (1 << CS12) | (1 << CS10);
-  //enable timer compare interrupt
-  TIMSK1 |= (1 << OCIE1A);
+  setupTimer1(1);
+  setupTimer3(0.25);
   sei();          //allow interrupts
   
 }
@@ -239,14 +304,13 @@ void loop() {
   double wheelPosActual = encCountsToPosition(wheelPosInCounts, 4048.0, 6.35);
   double roadPosActual = encCountsToPosition(roadPosInCounts, 4048.0, 6.35);
 
-  //find velocity of top two plates, time duration is time between loops
   double carPlateVelocity = findPlateVelocity(lastCarPos, carPosActual, loopDuration);
   double wheelPlateVelocity = findPlateVelocity(lastWheelPos, wheelPosActual, loopDuration);
-  
+
   //speed returned using motor enc counts for the past loop
   double motorSpeed = findSpeed(motorPosInCounts, 3415.92, loopDuration);
-
-  //shift everything in speed storage array one index over
+ 
+  //shift everything in speed storage array one index over and store new variable
   for (int index = 0; index < 19; index++)                                
   {
     speedStorage[index] = speedStorage[index + 1];
@@ -259,11 +323,11 @@ void loop() {
   lastCarPos = carPosActual;
   lastWheelPos = wheelPosActual;
   lastTime = startTime;
-  /*
+ 
   //send serial values to MATLab to be plotted
   Serial.println(millis());                     //print time
-  Serial.println(-carPosActual);          //print car position and offset on  graph
-  Serial.println(wheelPosActual);          //print wheel position and offset on  graph
+  Serial.println(carPosActual);          //print car position and offset on  graph
+  Serial.println(-wheelPosActual);          //print wheel position and offset on  graph
   Serial.println(roadPosActual);                //print road position
   Serial.println(motorSpeed);                   //print motorSpeed
   Serial.println(averageSpeed);                 //print average speed
@@ -273,7 +337,7 @@ void loop() {
   Serial.println(accelTop.getAccelX_mss(), 4);  //print x-accel
   Serial.println(accelTop.getAccelY_mss(), 4);  //print y-accel
   Serial.println(accelTop.getAccelZ_mss(), 4);  //print z-accel
-  
+/*
   //For plotting counts from encoders on serial plotter
   Serial.print("car: "); Serial.print(-carEnc.read()); Serial.print("  ");           
   Serial.print("wheel: "); Serial.print(wheelEnc.read()); Serial.print("  ");
@@ -302,6 +366,4 @@ void loop() {
   Serial.print("wheel plate velocity: "); Serial.println(wheelPlateVelocity);
   Serial.println("uT");
 */
-
- 
 }

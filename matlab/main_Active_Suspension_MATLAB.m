@@ -5,13 +5,7 @@
 close all; clear all; clc;
 
 %s=startSerial();    % initialize serial connection for windows i guess
-s=startMacSerial();  % initialize serial connection for mac
-
-%prompt = 'Enter speed between 0 and 90 rpm: ';
-%x = input(prompt);
-%speed = num2str(x);
-%s
-%fprintf(s, speed);   
+s=startMacSerial('/dev/cu.usbmodem141401');  % initialize serial connection for mac  
 
 numRows=700;
 numCols=12;
@@ -58,10 +52,9 @@ title('Road Actuation Speed');
 xlabel('Time (ms)');
 ylabel('Speed (rpm)');
 legend('Current', 'Average');
-fclose(s); 
-delete(s);
+closePort();
 clear s;
 
 %% run this section only if arduino cannot upload because port is busy or 
 % there is a fail to open port error 
-closePort('/dev/cu.usbmodem141401');
+closePort();

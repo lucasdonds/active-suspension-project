@@ -7,15 +7,26 @@ port = serial(portName); % to find ports, either check in
 fclose(port);
     try 
         set(port, 'BaudRate', 115200);
-        set(port, 'OutputBufferSize', 7);
+        set(port, 'OutputBufferSize', 512);
+        set(port,'DataBits',8);
+        set(port,'StopBits',1);
+        set(port,'Parity','none');
+        set(port, 'Terminator', 'CR/LF');
         fopen(port);
     catch
-        mbox = msgbox('open failed!'); uiwait(mbox);
-        instrfind
+        instrfind;
         fclose(ans);
-        instrfind
+        instrfind;
         fopen(port);
-        instrfind
     end
-    
+    instrfind
+    a = 'b';
+    while (a~='a') 
+        a=strtrim(fscanf(port));
+    end
+    if (a=='a')
+        disp('Serial read success');
+    end
+    fprintf(port,'%c','a');
+    mbox = msgbox('Serial Communication setup'); uiwait(mbox);
 end
