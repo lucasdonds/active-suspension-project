@@ -28,5 +28,5 @@ fclose(port);
         disp('Serial read success');
     end
     fprintf(port,'%c','a');
-    mbox = msgbox('Serial Communication setup'); uiwait(mbox);
+    disp('Serial communication set up');
 end

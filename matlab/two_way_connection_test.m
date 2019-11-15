@@ -1,4 +1,5 @@
 %% Main
+% to interface with Arduino: '2-way-serial-test.ino'
 close all; clear all; clc;
 
 %s=startSerial();    % initialize serial connection for windows i guess

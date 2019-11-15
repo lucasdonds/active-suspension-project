@@ -7,8 +7,10 @@ close all; clear all; clc;
 %s=startSerial();    % initialize serial connection for windows i guess
 s=startMacSerial('/dev/cu.usbmodem141401');  % initialize serial connection for mac  
 
-numRows=700;
-numCols=12;
+%resetMotor(s);
+
+numRows=100;
+numCols=15;
 
 testArray = zeros(numRows,numCols);
 for rows = 1:numRows
@@ -18,10 +20,10 @@ for rows = 1:numRows
     end
 end
 
-millis = testArray(:,1);  %first col
-carPosition= testArray(:,2);   %second col, etc
-wheelPosition = testArray(:,3);
-roadPosition = testArray(:,4);
+seconds = testArray(:,1)./1000;       %first col, etc... divide by 1000 to change ms to s
+carPosition = testArray(:,2)./1000;   %(Zs) divide col by 1000 to change mm to m
+wheelPosition = testArray(:,3)./1000; %(Zus) divide col by 1000 to change mm to m
+roadPosition = testArray(:,4)./1000;  %divide by col 1000 to change mm to m
 motorSpeed = testArray(:,5);
 averageSpeed = testArray(:,6);
 xAccel = testArray(:,7);
@@ -30,28 +32,45 @@ zAccel = testArray(:,9);
 xAccelTop = testArray(:,10);
 yAccelTop = testArray(:,11);
 zAccelTop = testArray(:,12);
+carVelocity = testArray(:,13);
+wheelVelocity = testArray(:,14);
+roadVelocity = testArray(:,15);
 
 figure; %plot acceleration of mid plate from mpu9250
-plot(millis, xAccel, millis, yAccel, millis, zAccel);
+plot(seconds, xAccel, seconds, yAccel, seconds, zAccel);
 title('Acceleration of Mid'); 
+xlabel('Time (s)');
+ylabel('Acceleration (m/s^2)');
+legend('Z (vertical)','Y','X');
 
 figure; %plot acceleration of top plate from mpu9250
-plot(millis, xAccelTop, millis, yAccelTop, millis, zAccelTop);
+plot(seconds, xAccelTop, seconds, yAccelTop, seconds, zAccelTop);
 title('Acceleration of Top'); 
+xlabel('Time (s)');
+ylabel('Acceleration (m/s^2)');
+legend('Z (vertical)','Y','X');
 
 figure; %plot positions vs time of the three plates
-plot(millis, carPosition, millis, wheelPosition, millis, roadPosition);
+plot(seconds, carPosition, seconds, wheelPosition, seconds, roadPosition);
 title('Positions');
-xlabel('Time (ms)');
+xlabel('Time (s)');
 ylabel('Position (m)');
 legend('Car (top)', 'Wheel (middle)', 'Road (bottom)') ;
 
-figure; %plot motorspeed and average motor speed
-plot(millis, motorSpeed, millis, averageSpeed);
-title('Road Actuation Speed');
-xlabel('Time (ms)');
-ylabel('Speed (rpm)');
-legend('Current', 'Average');
+% figure; %plot motorspeed and average motor speed
+% plot(seconds, motorSpeed, seconds, averageSpeed);
+% title('Road Actuation Speed');
+% xlabel('Time (s)');
+% ylabel('Speed (rpm)');
+% legend('Current', 'Average');
+
+figure; %plot velocities of plates 
+plot(seconds, carVelocity, seconds, wheelVelocity, seconds, roadVelocity);
+title('Plate Velocities');
+xlabel('Time (s)');
+ylabel('Speed (m/s)');
+legend('car', 'wheel', 'road')
+
 closePort();
 clear s;
 

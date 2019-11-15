@@ -1,3 +1,7 @@
+
+// to interface with Matlab: 'two_way_connection_test.m'
+
+
 int y = 1;
 int x = 1; 
 
