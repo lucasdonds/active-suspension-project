@@ -36,15 +36,6 @@ int roadEncA = 19;
 int susDirA = 10;
 int accelTopAD0 = 13;
 
-// Initialize array that stores previous speed values so average can be calculated 
-// Using fuction: average()
-double speedStorage[20] = { 0 };
-double averageSpeed = 0;
-double lastCarPos = 0;
-double lastWheelPos = 0;
-double lastRoadPos = 0;
-double lastTime = 0;
-
 // An MPU9250 object with the MPU-9250 sensor on I2C bus 0 with address 0x68
 MPU9250 accel(Wire, 0x68);
 MPU9250 accelTop(Wire, 0x69);
@@ -62,18 +53,25 @@ int loopCounter = 0;
 // Bool to control speed of road motor, initialized to false
 bool speed1Active = false;
 
+// Variable to store loopDuration, used in many fucntions
+double loopDuration;
+
+// Initialize array that stores previous speed values so average can be calculated 
+// Used in fuction: averageSpeed()
+double speedStorage[20] = { 0 };
+
+// Initialize variables used in findPlateVelocities();
+double lastCarPos = 0.0, lastWheelPos = 0.0, lastRoadPos = 0.0, lastTime;
+
 // Vertical shift to zero position graphs like a y=-Cos(x) wave
-double vShiftCar = 0;
-double vShiftWheel = 0;
-double vShiftRoad = 0;
+double vShiftCar = 0.0, vShiftWheel = 0.0, vShiftRoad = 0.0;
 
 // PID initializations
-double prevError = 0;
-double integral = 0;
-double setpoint = 0;
-double Kp = 0.1;
-double Ki = 0;
-double Kd = 0;
+double prevError = 0.0, integral = 0.0, setpoint = 0.0;
+int controlPWM = 0;
+double Kp = 10.0;
+double Ki = 0.0;
+double Kd = 1.0;
 
 ////////////////////////////////////////////
 
@@ -88,8 +86,6 @@ double average(double stored[], int arraySize, int numLoops);
 
 double findPlateVelocity(double lastPos, double curPos, double duration);
 
-double toggleSusMotorDir(int PWM);
-
 int toggleRoadMotorSpeed(int speed1, int speed2);
 
 void resetRoadMotor();
@@ -100,7 +96,7 @@ void setupTimer1(double desiredHz1);
 
 void setupTimer3(double desiredHz3);
 
-double getPidError();
+void pidControl(double measuredPos, double duration);
 
 ////////////////////////////////////////
 
@@ -108,16 +104,20 @@ double getPidError();
 // Interrupts get set up in setup()
 // Disable interrupts by commenting out whats inside the interrupt, but keep the interrupt
 
+/*
 // Interrupt for toggling speed of road motor
 ISR(TIMER3_COMPA_vect) {  //change the 1 to 0 for timer0 or 2 for timer2
    toggleRoadMotorSpeed(200, 200);
 }
 
+
 // Interrupt calling function to toggle motor direction of sus motor
 ISR(TIMER1_COMPA_vect) {  //change the 1 to 0 for timer0 or 2 for timer2
-   toggleSusMotorDir(50);
-}
+   analogWrite(susPWM, controlPWM);
 
+   Serial.print("controlPWM"); Serial.println(controlPWM);
+}
+*/
 /////////////////////////////////////////
 
 void setup() {
@@ -171,15 +171,17 @@ void setup() {
 
   // Set direction for road motor and initial direction for suspension motor
   digitalWrite(roadDirA, HIGH);
-  digitalWrite(susDirA, LOW);
+  analogWrite(roadPWM, 200);
 
   // Initialize all timer interrupts
-  cli();          //stops inturrupts
-  setupTimer1(1);
-  setupTimer3(0.25);
-  sei();          //allow interrupts
-  
+  //cli();          //stops inturrupts
+  //setupTimer1(2);
+  //setupTimer3(0.25);
+  //sei();          //allow interrupts
+
   resetRoadMotor();
+  
+  lastTime = millis();
   
 }
 
@@ -189,8 +191,8 @@ void loop() {
   
   // Increment loop counter
   loopCounter++;
-  
-  // Save start time
+
+    // Save start time
   double startTime = millis();
   
   // Find amount of time that has passed since
@@ -213,8 +215,8 @@ void loop() {
   // Measure actual encoder diameter and update later
   double carPosActual = encCountsToPosition(carPosInCounts, 4048.0, 6.35)+vShiftCar;  
   double wheelPosActual = encCountsToPosition(wheelPosInCounts, 4048.0, 6.35)+vShiftWheel;
-  double roadPosActual = encCountsToPosition(roadPosInCounts, 4048.0, 6.35)+vShiftRoad;
-
+  double roadPosActual = encCountsToPosition(roadPosInCounts, 4048.0, 6.35)+vShiftRoad;;
+  
   double carPlateVelocity = findPlateVelocity(lastCarPos, carPosActual, loopDuration);
   double wheelPlateVelocity = findPlateVelocity(lastWheelPos, wheelPosActual, loopDuration);
   double roadPlateVelocity = findPlateVelocity(lastRoadPos, roadPosActual, loopDuration);
@@ -232,13 +234,18 @@ void loop() {
   // Average of the last 20 motor speeds
   double averageSpeed = average(speedStorage, 20, loopCounter);
 
-  error = pidOutput(carPosActual, loopDuration);
+  // For testing PID controller
+  pidControl(carPosActual, loopDuration);
+
+  //Serial.print("controlPWM: "); Serial.println(controlPWM);
+  //Serial.print("plateDirUp?: "); Serial.println(plateDirUp);
   
   lastCarPos = carPosActual;
   lastWheelPos = wheelPosActual;
   lastRoadPos = roadPosActual;
   lastTime = startTime;
-///*
+  
+/*
   // Send serial values to MATLab to be plotted
   Serial.println(millis());                     //print time
   Serial.println(carPosActual);                 //print car position and offset on  graph
@@ -279,17 +286,16 @@ void loop() {
   Serial.print("wheel: "); Serial.print(wheelPosActual); Serial.print("  ");     
   Serial.print("road: "); Serial.print(roadPosActual); Serial.print("  ");
   Serial.println("uT"); 
-/*
+
   // For plotting car and wheel plate velocities
-  Serial.print("car plate velocity: "); Serial.println(carPlateVelocity);
-  Serial.print("wheel plate velocity: "); Serial.println(wheelPlateVelocity);
+  Serial.print("car plate velocity: "); Serial.println(carPlateVelocity*10);
+  //Serial.print("wheel plate velocity: "); Serial.println(wheelPlateVelocity);
   Serial.println("uT");
 
   // For plotting road motor enc counts
   Serial.print("Road motor enc counts"); Serial.println(motorEnc.read());
-  */
+*/
 
-  // For testing PID controller
 }
 
 ///////////////////////////////////////////////////
@@ -320,19 +326,19 @@ double findSpeed(long counts, double cpr, double duration)
 // Function that finds the average of all array values parameters: array, size of array
 double average(double stored[], int arraySize, int numLoops)        
 {
-  double total = 0;
+  double ave = 0;
   if (numLoops < arraySize)
   {
     for (int index = 0; index < numLoops; index++)
-      total += stored[index];
-    total /= numLoops;
+      ave += stored[index];
+    ave /= numLoops;
   }
   else {
     for (int index = 0; index < arraySize; index++)
-      total += stored[index];
-    total /= arraySize;
+      ave += stored[index];
+    ave /= arraySize;
   }
-  return total;
+  return ave;
 }
 
 // Function to find velocity of car and wheel plates (m/s)
@@ -342,13 +348,6 @@ double findPlateVelocity(double lastPos, double curPos, double duration)
   double velocity = curPos - lastPos;   //find dist travelled in mm
   velocity /= duration;                 //get velocity in mm/ms (which = m/s)
   return velocity;
-}
-
-// Function called by interrupt to toggle direction of sus motor
-double toggleSusMotorDir(int PWM)
-{
-  digitalWrite(susDirA, !digitalRead(susDirA));
-  analogWrite(susPWM, PWM);
 }
 
 // Function use din interrupt to toggle road Motor speed
@@ -368,7 +367,6 @@ int toggleRoadMotorSpeed(int speed1, int speed2)
 void resetRoadMotor()
 {
   int smallDelay = 30;
-  int testDelay = 50;
   double firstPos = 0;
   double secondPos = 0;
   double tol = 0.05;
@@ -377,7 +375,7 @@ void resetRoadMotor()
   firstPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35);
   delay(smallDelay);
   secondPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35);
-  delay(testDelay); 
+  delay(smallDelay); 
   }
   
   if (secondPos>firstPos)  // Going up
@@ -388,7 +386,6 @@ void resetRoadMotor()
       firstPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35);
       delay(smallDelay);
       secondPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35);  
-      delay(testDelay); 
     }
     // Then wait for trough
     while (secondPos<firstPos)
@@ -396,7 +393,6 @@ void resetRoadMotor()
       firstPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35); 
       delay(smallDelay);
       secondPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35); 
-      delay(testDelay);  
     }
     // Motor back at bottom so were good
   }
@@ -408,14 +404,9 @@ void resetRoadMotor()
       firstPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35);  
       delay(smallDelay);
       secondPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35); 
-      delay(testDelay);  
     }
     // Motor back at bottom so were good
   } 
-  
-  vShiftCar = -1*encCountsToPosition(carEnc.read(), 4048.0, 6.35);
-  vShiftWheel = -1*encCountsToPosition(wheelEnc.read(), 4048.0, 6.35);
-  vShiftRoad = -1*encCountsToPosition(roadEnc.read(), 4048.0, 6.35);
 }
 
 // Function that interfaces with matlab to set up serial connection
@@ -430,6 +421,7 @@ void serialHandshake()
   }
 }
 
+// Fuinction to setup interrupt, give it desired Hz at which interrupt is to be called
 void setupTimer1(double desiredHz1) 
 {
   // Set up interrupt for changing the sus motor direction
@@ -448,6 +440,7 @@ void setupTimer1(double desiredHz1)
   TIMSK1 |= (1 << OCIE1A);
 }
 
+// Fuinction to setup interrupt, give it desired Hz at which interrupt is to be called
 void setupTimer3(double desiredHz3)
 {
   // Set up interrupt for changing the road motor speed
@@ -466,15 +459,54 @@ void setupTimer3(double desiredHz3)
   TIMSK3 |= (1 << OCIE3A);
 }
 
-// Function to get PID adjustment output for sus motor
+// Function to get PID adjustment output for sus motor and to control motor based on this
 // measuredPos (mm), duration (ms), 
-double pidOutput(double measuredPos, double duration)
+void pidControl(double measuredPos, double duration)
 {
+  // First few lines to get PID output, kp, ki, kd controlled globally
   double error = setpoint - measuredPos; // mm
-  integral += error * elapsedTime;   // mm*ms = m*s (absement)
-  double derivative = (error - prevError) / elapsedTime; // mm/ms = m/s (velocity)
+  integral += error * duration;   // mm*ms = m*s (absement)
+  double derivative = (error - prevError) / duration; // mm/ms = m/s (velocity)
   double output = Kp * error + Ki * integral + Kd * derivative; // what to do with the output?!
   prevError = error;
-  return error;
-  //return output;
+
+  // Convert output to valid PWM integer
+  output = abs(floor(output));
+  if (output > 255)
+  {
+    controlPWM = 255;
+  }
+  else if (output < 0)
+  {
+    controlPWM = 0;
+  }
+  else {
+    controlPWM = output;
+  }
+
+  Serial.println(output);
+
+  // Figure out which direction motor should spin
+  // Depending on if error is + or -, set direction of motor!
+  bool plateDirUp;
+  if (error > 0)
+  {
+    plateDirUp = true;
+  }
+  else {
+    plateDirUp = false;
+  }
+
+  // Set direction
+  if (plateDirUp)
+  {
+   digitalWrite(susDirA, HIGH);
+  }
+  else 
+  {
+   digitalWrite(susDirA, LOW);
+  }
+
+  // Set PWM decided by PID
+  analogWrite(susPWM, controlPWM);
 }
