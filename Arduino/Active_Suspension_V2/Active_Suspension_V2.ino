@@ -63,9 +63,6 @@ double speedStorage[20] = { 0 };
 // Initialize variables used in findPlateVelocities();
 double lastCarPos = 0.0, lastWheelPos = 0.0, lastRoadPos = 0.0, lastTime;
 
-// Vertical shift to zero position graphs like a y=-Cos(x) wave
-double vShiftCar = 0.0, vShiftWheel = 0.0, vShiftRoad = 0.0;
-
 // PID initializations
 double prevError = 0.0, integral = 0.0, setpoint = 0.0;
 int controlPWM = 0;
@@ -78,9 +75,11 @@ double Kd = 1.0;
 // FUNCTION DECLARATIONS!!!!!!
 // All functions are below loop(), with explanations of their purpose and how they work
 
+void initializeAccelerometers();
+
 double encCountsToPosition(long counts, double cpr, double diameter);
 
-double findSpeed(long counts, double cpr, double duration);
+double findMotorRPM(long counts, double cpr, double duration);
 
 double average(double stored[], int arraySize, int numLoops);
 
@@ -113,9 +112,7 @@ ISR(TIMER3_COMPA_vect) {  //change the 1 to 0 for timer0 or 2 for timer2
 
 // Interrupt calling function to toggle motor direction of sus motor
 ISR(TIMER1_COMPA_vect) {  //change the 1 to 0 for timer0 or 2 for timer2
-   analogWrite(susPWM, controlPWM);
 
-   Serial.print("controlPWM"); Serial.println(controlPWM);
 }
 */
 /////////////////////////////////////////
@@ -128,42 +125,8 @@ void setup() {
   // Initial connection with matlab
   //serialHandshake();
 
-  // Send HIGH to ADO port on top accelerometer to change MPU9250 adress to 0x69
-  digitalWrite(accelTopAD0, HIGH);
-
-  // Start communication with accelerometer
-  status = accel.begin();
-  status = accelTop.begin();
-
-  // Set up accelerometers scale factors and bias'
-  float axb = accel.getAccelBiasX_mss();
-  float axs = accel.getAccelScaleFactorX();
-  float ayb = accel.getAccelBiasY_mss();
-  float ays = accel.getAccelScaleFactorY();
-  float azb = accel.getAccelBiasZ_mss();
-  float azs = accel.getAccelScaleFactorZ();
-  float axbTop = accelTop.getAccelBiasX_mss();
-  float axsTop = accelTop.getAccelScaleFactorX();
-  float aybTop = accelTop.getAccelBiasY_mss();
-  float aysTop = accelTop.getAccelScaleFactorY();
-  float azbTop = accelTop.getAccelBiasZ_mss();
-  float azsTop = accelTop.getAccelScaleFactorZ();
-
-  // Calibrate accelerometers
-  accel.setAccelCalX(axb, axs);
-  accel.setAccelCalY(ayb, ays);
-  accel.setAccelCalZ(azb, azs);
-  accelTop.setAccelCalX(axbTop, axsTop);
-  accelTop.setAccelCalY(aybTop, aysTop);
-  accelTop.setAccelCalZ(azbTop, azsTop);
-
-  // Set accelerometer ranges
-  accel.setAccelRange(MPU9250::ACCEL_RANGE_8G);
-  accel.setDlpfBandwidth(MPU9250::DLPF_BANDWIDTH_20HZ);
-  accel.setSrd(19);
-  accelTop.setAccelRange(MPU9250::ACCEL_RANGE_8G);
-  accelTop.setDlpfBandwidth(MPU9250::DLPF_BANDWIDTH_20HZ);
-  accelTop.setSrd(19);
+  // Initialize and calibrate both accelerometers
+  initializeAccelerometers();
 
   // Set pinModes (Encoder initializer sets pinMode for encoder objects)
   pinMode(roadDirA, OUTPUT);
@@ -179,8 +142,10 @@ void setup() {
   //setupTimer3(0.25);
   //sei();          //allow interrupts
 
+  // Reset road motor (and whole system) to 'home' position
   resetRoadMotor();
-  
+
+  // Starting time of loop
   lastTime = millis();
   
 }
@@ -192,7 +157,7 @@ void loop() {
   // Increment loop counter
   loopCounter++;
 
-    // Save start time
+  // Save start time
   double startTime = millis();
   
   // Find amount of time that has passed since
@@ -212,17 +177,17 @@ void loop() {
   long motorPosInCounts = motorEnc.read() - motorStart;
 
   // Convert counts measured into actual positions
-  // Measure actual encoder diameter and update later
-  double carPosActual = encCountsToPosition(carPosInCounts, 4048.0, 6.35)+vShiftCar;  
-  double wheelPosActual = encCountsToPosition(wheelPosInCounts, 4048.0, 6.35)+vShiftWheel;
-  double roadPosActual = encCountsToPosition(roadPosInCounts, 4048.0, 6.35)+vShiftRoad;;
-  
+  double carPosActual = encCountsToPosition(carPosInCounts, 4048.0, 6.35);  
+  double wheelPosActual = encCountsToPosition(wheelPosInCounts, 4048.0, 6.35);
+  double roadPosActual = encCountsToPosition(roadPosInCounts, 4048.0, 6.35);
+
+  // Find velocities of plates with their position readings over a time interval
   double carPlateVelocity = findPlateVelocity(lastCarPos, carPosActual, loopDuration);
   double wheelPlateVelocity = findPlateVelocity(lastWheelPos, wheelPosActual, loopDuration);
   double roadPlateVelocity = findPlateVelocity(lastRoadPos, roadPosActual, loopDuration);
 
   // Speed returned using motor enc counts for the past loop
-  double motorSpeed = findSpeed(motorPosInCounts, 3415.92, loopDuration);
+  double motorSpeed = findMotorRPM(motorPosInCounts, 3415.92, loopDuration);
  
   // Shift everything in speed storage array one index over and store new variable
   for (int index = 0; index < 19; index++)                                
@@ -234,12 +199,13 @@ void loop() {
   // Average of the last 20 motor speeds
   double averageSpeed = average(speedStorage, 20, loopCounter);
 
-  // For testing PID controller
+  // For controlling suspension motor using PID
   pidControl(carPosActual, loopDuration);
 
   //Serial.print("controlPWM: "); Serial.println(controlPWM);
   //Serial.print("plateDirUp?: "); Serial.println(plateDirUp);
-  
+
+  // Set current values to past values, to be used in proceding loop
   lastCarPos = carPosActual;
   lastWheelPos = wheelPosActual;
   lastRoadPos = roadPosActual;
@@ -280,15 +246,16 @@ void loop() {
   Serial.print("speed: "); Serial.print(motorSpeed); Serial.print("  ");              
   Serial.print("average: "); Serial.print(averageSpeed); Serial.print("  ");
   Serial.println("uT");
- 
+ */
   // For plotting positions from encoders on serial plotter
   Serial.print("car: "); Serial.print(carPosActual); Serial.print("  "); 
   Serial.print("wheel: "); Serial.print(wheelPosActual); Serial.print("  ");     
   Serial.print("road: "); Serial.print(roadPosActual); Serial.print("  ");
+  Serial.print("Setpoint: "); Serial.print(setpoint); Serial.print("  ");
   Serial.println("uT"); 
-
+/*
   // For plotting car and wheel plate velocities
-  Serial.print("car plate velocity: "); Serial.println(carPlateVelocity*10);
+  Serial.print("car plate velocity: "); Serial.println(carPlateVelocity);
   //Serial.print("wheel plate velocity: "); Serial.println(wheelPlateVelocity);
   Serial.println("uT");
 
@@ -302,6 +269,47 @@ void loop() {
 
 // FUNCTIONS!!!!!!!!!
 
+// Initialize and calibrate both accelerometers
+void initializeAccelerometers()
+{
+  // Send HIGH to ADO port on top accelerometer to change MPU9250 adress to 0x69
+  digitalWrite(accelTopAD0, HIGH);
+  
+  // Start communication with accelerometer
+  status = accel.begin();
+  status = accelTop.begin();
+
+  // Set up accelerometers scale factors and bias'
+  float axb = accel.getAccelBiasX_mss();
+  float axs = accel.getAccelScaleFactorX();
+  float ayb = accel.getAccelBiasY_mss();
+  float ays = accel.getAccelScaleFactorY();
+  float azb = accel.getAccelBiasZ_mss();
+  float azs = accel.getAccelScaleFactorZ();
+  float axbTop = accelTop.getAccelBiasX_mss();
+  float axsTop = accelTop.getAccelScaleFactorX();
+  float aybTop = accelTop.getAccelBiasY_mss();
+  float aysTop = accelTop.getAccelScaleFactorY();
+  float azbTop = accelTop.getAccelBiasZ_mss();
+  float azsTop = accelTop.getAccelScaleFactorZ();
+
+  // Calibrate accelerometers
+  accel.setAccelCalX(axb, axs);
+  accel.setAccelCalY(ayb, ays);
+  accel.setAccelCalZ(azb, azs);
+  accelTop.setAccelCalX(axbTop, axsTop);
+  accelTop.setAccelCalY(aybTop, aysTop);
+  accelTop.setAccelCalZ(azbTop, azsTop);
+
+  // Set accelerometer ranges
+  accel.setAccelRange(MPU9250::ACCEL_RANGE_8G);
+  accel.setDlpfBandwidth(MPU9250::DLPF_BANDWIDTH_20HZ);
+  accel.setSrd(19);
+  accelTop.setAccelRange(MPU9250::ACCEL_RANGE_8G);
+  accelTop.setDlpfBandwidth(MPU9250::DLPF_BANDWIDTH_20HZ);
+  accelTop.setSrd(19);
+}
+
 // Function that converts position from number of counts to height (mm); using counts per 
 // revolution, diameter of encoder shaft (in mm), cpr=counts per rev
 double encCountsToPosition(long counts, double cpr, double diameter)           
@@ -314,7 +322,7 @@ double encCountsToPosition(long counts, double cpr, double diameter)
 
 // Function that finds the speed (RPM) of the motor using the change in position from 
 // the motor encoder duration in milliseconds
-double findSpeed(long counts, double cpr, double duration)           
+double findMotorRPM(long counts, double cpr, double duration)           
 {
   double rpm = fabs(counts);
   rpm = rpm/duration;
@@ -366,47 +374,78 @@ int toggleRoadMotorSpeed(int speed1, int speed2)
 // Function to
 void resetRoadMotor()
 {
-  int smallDelay = 30;
-  double firstPos = 0;
-  double secondPos = 0;
+  int smallDelay = 10;
+  double firstPos = 0, secondPos = 0;
   double tol = 0.05;
-  
+  double crest = 0, trough = 0;
+
+  // Wait while motor is not running
   while (tol >= abs(firstPos-secondPos)) {
   firstPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35);
   delay(smallDelay);
   secondPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35);
-  delay(smallDelay); 
   }
   
   if (secondPos>firstPos)  // Going up
   {
-    // Wait for peak
+    // Then wait for crest by comparing both positions
+    // Set crest to highest position
     while (secondPos>firstPos)
     {
       firstPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35);
       delay(smallDelay);
       secondPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35);  
     }
-    // Then wait for trough
+    crest = encCountsToPosition(carEnc.read(), 4048.0, 6.35);  
+    Serial.println(crest);
+    // Then wait for trough by comparing both positions
+    // Set trough to lowest position
     while (secondPos<firstPos)
     {
       firstPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35); 
       delay(smallDelay);
       secondPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35); 
     }
+    trough = encCountsToPosition(carEnc.read(), 4048.0, 6.35);
+    Serial.println(trough);
     // Motor back at bottom so were good
   }
   else // Going down already
   {
-    // Wait for trough
+    // Then wait for trough by comparing both positions
+    // Set trough to lowest position
     while (secondPos<firstPos)
     {
       firstPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35);  
       delay(smallDelay);
       secondPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35); 
     }
+    trough = encCountsToPosition(carEnc.read(), 4048.0, 6.35);
+    Serial.println(trough);
+    // Then wait for crest by comparing both positions
+    // Set crest to highest position
+    while (secondPos>firstPos)
+    {
+      firstPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35);
+      delay(smallDelay);
+      secondPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35);  
+    }
+    crest = encCountsToPosition(carEnc.read(), 4048.0, 6.35);  
+    Serial.println(crest);
+    // Then wait for trough by comparing both positions
+    // Set trough to lowest position
+    while (secondPos<firstPos)
+    {
+      firstPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35); 
+      delay(smallDelay);
+      secondPos = encCountsToPosition(carEnc.read(), 4048.0, 6.35); 
+    }
+
     // Motor back at bottom so were good
   } 
+
+  setpoint = (crest+trough)/2;
+
 }
 
 // Function that interfaces with matlab to set up serial connection
@@ -484,7 +523,8 @@ void pidControl(double measuredPos, double duration)
     controlPWM = output;
   }
 
-  Serial.println(output);
+  // For testing!
+  //Serial.println(controlPWM);
 
   // Figure out which direction motor should spin
   // Depending on if error is + or -, set direction of motor!
@@ -496,6 +536,9 @@ void pidControl(double measuredPos, double duration)
   else {
     plateDirUp = false;
   }
+
+  // For testing!
+  //Serial.println(plateDirUp);
 
   // Set direction
   if (plateDirUp)
