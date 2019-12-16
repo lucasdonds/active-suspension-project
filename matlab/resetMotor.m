@@ -1,13 +1,20 @@
 function port = resetMotor(portName)
-    a = 'b';
-    while (a~='s') 
-        a=strtrim(fscanf(portName));
+
+    port = serial(portName);
+        set(port, 'BaudRate', 115200);
+        set(port, 'OutputBufferSize', 512);
+        set(port,'DataBits',8);
+        set(port,'StopBits',1);
+        set(port,'Parity','none');
+        set(port, 'Terminator', 'CR/LF');
+
+    c = 'd';
+    while (c~='c') 
+        c=strtrim(fscanf(port));
     end
-    disp('start motor reset');
-    while (a~='e')
-        a=strtrim(fscanf(portName));
+    if (c=='c')
+        disp('Serial read success');
     end
-    if (a=='e')
-        disp('finished motor reset');
-    end
+    fprintf(port,'%c','c');
+    disp('Motor Reset');
 end

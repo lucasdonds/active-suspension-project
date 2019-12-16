@@ -8,10 +8,12 @@ fclose(port);
     try 
         set(port, 'BaudRate', 115200);
         set(port, 'OutputBufferSize', 512);
+        set(port, 'InputBufferSize', 768);
         set(port,'DataBits',8);
         set(port,'StopBits',1);
         set(port,'Parity','none');
         set(port, 'Terminator', 'CR/LF');
+        set(port, 'Timeout', 20);
         fopen(port);
     catch
         instrfind;
@@ -20,13 +22,5 @@ fclose(port);
         fopen(port);
     end
     instrfind
-    a = 'b';
-    while (a~='a') 
-        a=strtrim(fscanf(port));
-    end
-    if (a=='a')
-        disp('Serial read success');
-    end
-    fprintf(port,'%c','a');
-    disp('Serial communication set up');
+
 end
